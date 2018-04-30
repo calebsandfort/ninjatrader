@@ -30,6 +30,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 		private Series<double> highLowSeries;
 		private Brush BullishBrush = Brushes.DarkBlue;
 		private Brush BearishBrush = Brushes.HotPink;
+		public int Signal = 0;
 		
 		protected override void OnStateChange()
 		{
@@ -63,12 +64,15 @@ namespace NinjaTrader.NinjaScript.Indicators
 				
 				Plots[0].Width= 2;
 				Plots[1].Width= 2;
-				
-				diffSeries = new Series<double>(this);
-				highLowSeries = new Series<double>(this);
 			}
 			else if (State == State.Configure)
 			{
+			}
+			else if (State == State.DataLoaded)
+			{
+				diffSeries = new Series<double>(this);
+				highLowSeries = new Series<double>(this);
+				Signal = 0;
 			}
 		}
 
@@ -100,25 +104,44 @@ namespace NinjaTrader.NinjaScript.Indicators
 
 			String alertText = String.Format("{0:C2} / {1:N2} / {2:N2}", Close[0], tickRange, diff);
 
-			bool buy = validTickRange && isRedTwoBack && isGreenOneBack && diff > MinMaDiff && diff < MaxMaDiff;
+			Print(String.Format("GoLong: {0}", GoLong));
+			
+			bool buy = GoLong && validTickRange && isRedTwoBack && isGreenOneBack && diff > MinMaDiff && diff < MaxMaDiff;
 
             if (buy)
 			{
 				ArrowUp buyArrow = Draw.ArrowUp(this, String.Format("buy_arrow_{0}", CurrentBar), true, 0, Low[0] - (4 * TickSize), Brushes.Yellow);
-				Alert(String.Format("buy_alert_{0}", CurrentBar), Priority.High, alertText,
-					NinjaTrader.Core.Globals.InstallDir+@"\sounds\Alert1.wav", 10, Brushes.Green, Brushes.White);
+				
+				if(FireAlerts)
+				{
+					Alert(String.Format("buy_alert_{0}", CurrentBar), Priority.High, alertText,
+						NinjaTrader.Core.Globals.InstallDir+@"\sounds\Alert1.wav", 10, Brushes.Green, Brushes.White);
+				}
+				
+				Signal = 1;
 			}
 			
-			bool sell = validTickRange && isGreenTwoBack && isRedOneBack && diff < -MinMaDiff && diff > -MaxMaDiff;
+			bool sell = GoShort && validTickRange && isGreenTwoBack && isRedOneBack && diff < -MinMaDiff && diff > -MaxMaDiff;
 			if(sell)
 			{
 				ArrowDown sellArrow = Draw.ArrowDown(this, String.Format("sell_arrow_{0}", CurrentBar), true, 0, High[0] + (4 * TickSize), Brushes.Pink);
-				Alert(String.Format("sell_alert_{0}", CurrentBar), Priority.High, alertText,
-					NinjaTrader.Core.Globals.InstallDir+@"\sounds\Alert1.wav", 10, Brushes.Red, Brushes.White);
+				
+				if(FireAlerts)
+				{
+					Alert(String.Format("sell_alert_{0}", CurrentBar), Priority.High, alertText,
+						NinjaTrader.Core.Globals.InstallDir+@"\sounds\Alert1.wav", 10, Brushes.Red, Brushes.White);
+				}
+				
+				Signal = -1;
 			}		
 
-			Draw.TextFixed(this, "smaDiff", String.Format("ATR: {0:N0}, SMA Diff: {1:N2}", tickRange, diff), TextPosition.TopRight,
-				ChartControl.Properties.ChartText, ChartControl.Properties.LabelFont, Brushes.Transparent, trendBrush, 100);
+			if (!buy && !sell)
+			{
+				Signal = 0;
+			}
+			
+//			Draw.TextFixed(this, "smaDiff", String.Format("ATR: {0:N0}, SMA Diff: {1:N2}", tickRange, diff), TextPosition.TopRight,
+//				ChartControl.Properties.ChartText, ChartControl.Properties.LabelFont, Brushes.Transparent, trendBrush, 100);
 		}
 
 		#region Properties
@@ -193,7 +216,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 			get { return Values[1]; }
 		}
 		#endregion
-
 	}
 }
 

@@ -27,8 +27,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public class ThaStrategy : Strategy
 	{
+		private Brush BullishBrush = Brushes.DarkBlue;
+		private Brush BearishBrush = Brushes.HotPink;
+		
+		private Series<double> diffSeries;
+		private Series<double> highLowSeries;
+		
+		private EMA fastMaIndicator;
+		private EMA slowMaIndicator;
+		
 		protected override void OnStateChange()
 		{
+			Print(State);
 			if (State == State.SetDefaults)
 			{
 				Description									= @"Enter the description for your new custom Strategy here.";
@@ -48,9 +58,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				RealtimeErrorHandling						= RealtimeErrorHandling.StopCancelClose;
 				StopTargetHandling							= StopTargetHandling.PerEntryExecution;
 				BarsRequiredToTrade							= 20;
+				DefaultQuantity								= 1;
 				// Disable this property for performance gains in Strategy Analyzer optimizations
 				// See the Help Guide for additional information
-				IsInstantiatedOnEachOptimizationIteration	= true;
+				IsInstantiatedOnEachOptimizationIteration	= false;
 
                 FastMaPeriod                                = 10;
                 SlowMaPeriod                                = 20;
@@ -65,6 +76,24 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 			else if (State == State.Configure)
 			{
+				SetProfitTarget(CalculationMode.Ticks, 5);
+				SetStopLoss(CalculationMode.Ticks, 12);
+				SetOrderQuantity = SetOrderQuantity.DefaultQuantity;
+				
+				
+				fastMaIndicator = EMA(FastMaPeriod);
+				slowMaIndicator = EMA(SlowMaPeriod);
+
+				slowMaIndicator.Plots[0].Brush = Brushes.White;
+
+				AddChartIndicator(fastMaIndicator);
+				AddChartIndicator(slowMaIndicator);
+				
+			}
+			else if (State == State.DataLoaded)
+			{
+				diffSeries = new Series<double>(this);
+				highLowSeries = new Series<double>(this);
 			}
 		}
 
@@ -89,7 +118,38 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		protected override void OnBarUpdate()
 		{
-			//Add your custom strategy logic here.
+			if (CurrentBar < SlowMaPeriod) return;
+			
+			double fastMa = fastMaIndicator[0];
+			double slowMa = slowMaIndicator[0];
+			
+			double diff = fastMa - slowMa;
+			
+			bool isGreenOneBack = Close[0] > Open[0];
+			bool isGreenTwoBack = Close[1] > Open[1];
+			bool isRedOneBack = Close[0] < Open[0];
+			bool isRedTwoBack = Close[1] < Open[1];
+			
+			highLowSeries[0] = (High[0] - Low[0])/TickSize;
+			double tickRange = EMA(highLowSeries, TickRangePeriod)[0];
+            bool validTickRange = tickRange > MinTickRange && tickRange < MaxTickRange;
+
+			Brush trendBrush = fastMa < slowMa ? BearishBrush : BullishBrush;
+			fastMaIndicator.PlotBrushes[0][0] = trendBrush;
+			
+			bool buy = GoLong && validTickRange && isRedTwoBack && isGreenOneBack && diff > MinMaDiff && diff < MaxMaDiff;
+
+            if (buy)
+			{
+				EnterLong();				
+			}
+			
+			bool sell = GoShort && validTickRange && isGreenTwoBack && isRedOneBack && diff < -MinMaDiff && diff > -MaxMaDiff;
+			
+			if(sell)
+			{
+				EnterShort();
+			}		
 		}
 
         #region Properties
@@ -150,5 +210,5 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public bool FireAlerts
 		{ get; set; }
         #endregion
-    }
+	}
 }
