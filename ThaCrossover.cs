@@ -1,25 +1,11 @@
 #region Using declarations
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Input;
 using System.Windows.Media;
-using System.Xml.Serialization;
 using NinjaTrader.Cbi;
-using NinjaTrader.Gui;
-using NinjaTrader.Gui.Chart;
-using NinjaTrader.Gui.SuperDom;
-using NinjaTrader.Gui.Tools;
-using NinjaTrader.Data;
-using NinjaTrader.NinjaScript;
-using NinjaTrader.Core.FloatingPoint;
 using NinjaTrader.NinjaScript.Indicators;
-using NinjaTrader.NinjaScript.DrawingTools;
 using System.Net.Http;
 using System.Globalization;
 #endregion
@@ -27,7 +13,7 @@ using System.Globalization;
 //This namespace holds Strategies in this folder and is required. Do not change it. 
 namespace NinjaTrader.NinjaScript.Strategies
 {
-	public class ThaStrategy : Strategy
+    public class ThaCrossover : Strategy
 	{
         #region Props
         private Brush BullishBrush = Brushes.DarkBlue;
@@ -39,7 +25,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private EMA fastMaIndicator;
         private EMA slowMaIndicator;
 
-        private double tickRange; 
+        private double tickRange;
+        private bool openPosition = false;
         #endregion
 
         #region OrderTracking
@@ -132,7 +119,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 //ES = 1
                 //NQ = 4
 
-                if (execution.Order.Name.ToLower() == "buy" || execution.Order.Name.ToLower() == "sell short")
+                if (!openPosition)
                 {
                     this.ResetOt();
 
@@ -150,8 +137,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     this.ot_diffXDiff = diffSeries[DiffXX] - diffSeries[0];
                     this.ot_diffXSlope = this.ot_diffXDiff / DiffXX;
                     this.ot_diffXChange = this.ot_diffXDiff / diffSeries[0];
+
+                    this.openPosition = true;
                 }
-                else if (execution.Order.Name.ToLower() == "profit target" || execution.Order.Name.ToLower() == "stop loss")
+                else if (openPosition)
                 {
                     this.ot_exitTimestamp = execution.Order.Time;
                     this.ot_exitPrice = execution.Order.AverageFillPrice;
@@ -183,6 +172,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                     this.ot_adjProfitLoss = this.ot_profitLoss - this.ot_commissions;
                     this.ot_profitLossPerContract = this.ot_adjProfitLoss / this.ot_size;
+
+                    this.openPosition = false;
 
                     if (this.TradingAccountId > 0)
                     {
@@ -257,7 +248,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (State == State.SetDefaults)
             {
                 Description = @"Enter the description for your new custom Strategy here.";
-                Name = "ThaStrategy";
+                Name = "ThaCrossover";
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.AllEntries;
@@ -295,8 +286,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (State == State.Configure)
             {
-                SetProfitTarget(CalculationMode.Ticks, this.ProfitTarget);
-                SetStopLoss(CalculationMode.Ticks, this.StopLoss);
+                //SetProfitTarget(CalculationMode.Ticks, this.ProfitTarget);
+                //SetStopLoss(CalculationMode.Ticks, this.StopLoss);
                 SetOrderQuantity = SetOrderQuantity.DefaultQuantity;
 
                 fastMaIndicator = EMA(FastMaPeriod);
@@ -348,11 +339,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             diffSeries[0] = fastMa - slowMa;
 
-            bool isGreenOneBack = Close[0] > Open[0];
-            bool isGreenTwoBack = Close[1] > Open[1];
-            bool isRedOneBack = Close[0] < Open[0];
-            bool isRedTwoBack = Close[1] < Open[1];
-
             highLowSeries[0] = (High[0] - Low[0]) / TickSize;
             tickRange = EMA(highLowSeries, TickRangePeriod)[0];
 
@@ -363,79 +349,88 @@ namespace NinjaTrader.NinjaScript.Strategies
             Brush trendBrush = fastMa < slowMa ? BearishBrush : BullishBrush;
             fastMaIndicator.PlotBrushes[0][0] = trendBrush;
 
-            bool buy = GoLong && validTickRange && isRedTwoBack && isGreenOneBack && diffSeries[0] > MinMaDiff && diffSeries[0] < MaxMaDiff;
+            bool crossAboveBull = diffSeries[0] >= MinMaDiff && diffSeries[1] < MinMaDiff;
+            bool crossBelowBull = diffSeries[0] < MinMaDiff && diffSeries[1] >= MinMaDiff;
 
-            if (buy)
+            bool crossAboveBear = diffSeries[0] > -MinMaDiff && diffSeries[1] <= -MinMaDiff;
+            bool crossBelowBear = diffSeries[0] <= -MinMaDiff && diffSeries[1] > -MinMaDiff;
+
+            if (!this.openPosition && crossAboveBull)
             {
                 EnterLong();
             }
-
-            bool sell = GoShort && validTickRange && isGreenTwoBack && isRedOneBack && diffSeries[0] < -MinMaDiff && diffSeries[0] > -MaxMaDiff;
-
-            if (sell)
+            else if (!this.openPosition && crossBelowBear)
             {
                 EnterShort();
             }
-        } 
+            else if (this.openPosition && crossBelowBull)
+            {
+                ExitLong();
+            }
+            else if (this.openPosition && crossAboveBear)
+            {
+                ExitShort();
+            }
+        }
         #endregion
 
         #region Properties
         [NinjaScriptProperty]
-		[Range(1, int.MaxValue)]
-		[Display(Name="FastMaPeriod", Order=1, GroupName="Parameters")]
-		public int FastMaPeriod
-		{ get; set; }
+        [Range(1, int.MaxValue)]
+        [Display(Name = "FastMaPeriod", Order = 1, GroupName = "Parameters")]
+        public int FastMaPeriod
+        { get; set; }
 
-		[NinjaScriptProperty]
-		[Range(1, int.MaxValue)]
-		[Display(Name="SlowMaPeriod", Order=2, GroupName="Parameters")]
-		public int SlowMaPeriod
-		{ get; set; }
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "SlowMaPeriod", Order = 2, GroupName = "Parameters")]
+        public int SlowMaPeriod
+        { get; set; }
 
-		[NinjaScriptProperty]
-		[Range(1, int.MaxValue)]
-		[Display(Name="TickRangePeriod", Order=3, GroupName="Parameters")]
-		public int TickRangePeriod
-		{ get; set; }
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "TickRangePeriod", Order = 3, GroupName = "Parameters")]
+        public int TickRangePeriod
+        { get; set; }
 
-		[NinjaScriptProperty]
-		[Range(0, double.MaxValue)]
-		[Display(Name="MinMaDiff", Order=4, GroupName="Parameters")]
-		public double MinMaDiff
-		{ get; set; }
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "MinMaDiff", Order = 4, GroupName = "Parameters")]
+        public double MinMaDiff
+        { get; set; }
 
-		[NinjaScriptProperty]
-		[Range(0, double.MaxValue)]
-		[Display(Name="MaxMaDiff", Order=5, GroupName="Parameters")]
-		public double MaxMaDiff
-		{ get; set; }
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "MaxMaDiff", Order = 5, GroupName = "Parameters")]
+        public double MaxMaDiff
+        { get; set; }
 
-		[NinjaScriptProperty]
-		[Range(0, double.MaxValue)]
-		[Display(Name="MinTickRange", Order=6, GroupName="Parameters")]
-		public double MinTickRange
-		{ get; set; }
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "MinTickRange", Order = 6, GroupName = "Parameters")]
+        public double MinTickRange
+        { get; set; }
 
-		[NinjaScriptProperty]
-		[Range(0, double.MaxValue)]
-		[Display(Name="MaxTickRange", Order=7, GroupName="Parameters")]
-		public double MaxTickRange
-		{ get; set; }
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "MaxTickRange", Order = 7, GroupName = "Parameters")]
+        public double MaxTickRange
+        { get; set; }
 
-		[NinjaScriptProperty]
-		[Display(Name="GoLong", Order=8, GroupName="Parameters")]
-		public bool GoLong
-		{ get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "GoLong", Order = 8, GroupName = "Parameters")]
+        public bool GoLong
+        { get; set; }
 
-		[NinjaScriptProperty]
-		[Display(Name="GoShort", Order=9, GroupName="Parameters")]
-		public bool GoShort
-		{ get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "GoShort", Order = 9, GroupName = "Parameters")]
+        public bool GoShort
+        { get; set; }
 
-		[NinjaScriptProperty]
-		[Display(Name="FireAlerts", Order=10, GroupName="Parameters")]
-		public bool FireAlerts
-		{ get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "FireAlerts", Order = 10, GroupName = "Parameters")]
+        public bool FireAlerts
+        { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
