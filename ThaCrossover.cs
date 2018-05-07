@@ -8,6 +8,7 @@ using NinjaTrader.Cbi;
 using NinjaTrader.NinjaScript.Indicators;
 using System.Net.Http;
 using System.Globalization;
+using GuerillaTraderBridge;
 #endregion
 
 //This namespace holds Strategies in this folder and is required. Do not change it. 
@@ -18,98 +19,21 @@ namespace NinjaTrader.NinjaScript.Strategies
         #region Props
         private Brush BullishBrush = Brushes.DarkBlue;
         private Brush BearishBrush = Brushes.HotPink;
+        private Brush NeutralBrush = Brushes.Gray;
 
         private Series<double> diffSeries;
         private Series<double> highLowSeries;
 
         private EMA fastMaIndicator;
         private EMA slowMaIndicator;
+        private MyRange myRange;
 
         private double tickRange;
         private bool openPosition = false;
+        private Bridge guerillaTraderBridge = new Bridge();
         #endregion
 
         #region OrderTracking
-        #region Enums
-        private enum TradeTriggers
-        {
-            None,
-            Signals,
-            Support,
-            Resistance,
-            BullishBreakout,
-            BearishBreakout,
-            Contrarian
-        }
-
-        private enum TrendTypes
-        {
-            None,
-            Bearish,
-            Neutral,
-            Bullish
-        }
-
-        private enum TradeTypes
-        {
-            None,
-            LongFuture,
-            ShortFuture,
-            CoveredCall,
-            BullPutSpread
-        }
-        #endregion
-
-        #region Props
-        DateTime ot_entryTimestamp;
-        DateTime ot_exitTimestamp;
-        double ot_diff;
-        double ot_tickRange;
-        double ot_entryPrice;
-        double ot_exitPrice;
-        int ot_size;
-        int ot_tradeType;
-        int ot_trigger;
-        int ot_trend;
-        double ot_profitLoss;
-        double ot_adjProfitLoss;
-        double ot_profitLossPerContract;
-        int ot_marketId;
-        double ot_commissions;
-
-        int ot_diffXX;
-        double ot_diffXDiff;
-        double ot_diffXSlope;
-        double ot_diffXChange;
-        #endregion
-
-        #region ResetOt
-        private void ResetOt()
-        {
-            this.ot_entryTimestamp = DateTime.MinValue;
-            this.ot_exitTimestamp = DateTime.MinValue;
-            this.ot_diff = 0.0;
-            this.ot_tickRange = 0.0;
-            this.ot_entryPrice = 0.0;
-            this.ot_exitPrice = 0.0;
-            this.ot_size = 0;
-            this.ot_tradeType = (int)TradeTypes.None;
-            this.ot_trigger = (int)TradeTriggers.None;
-            this.ot_trend = (int)TrendTypes.None;
-            this.ot_profitLoss = 0.0;
-            this.ot_adjProfitLoss = 0.0;
-            this.ot_profitLossPerContract = 0.0;
-
-            this.ot_marketId = 0;
-            this.ot_commissions = 0;
-
-            this.ot_diffXX = 0;
-            this.ot_diffXDiff = 0.0;
-            this.ot_diffXSlope = 0.0;
-            this.ot_diffXChange = 0.0;
-        }
-        #endregion
-
         #region RecordTradeProps
         private void RecordTradeProps(Execution execution)
         {
@@ -121,122 +45,67 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (!openPosition)
                 {
-                    this.ResetOt();
+                    this.guerillaTraderBridge.Reset();
 
-                    this.ot_entryTimestamp = execution.Order.Time;
-                    this.ot_tickRange = tickRange;
-                    this.ot_entryPrice = execution.Order.AverageFillPrice;
-                    this.ot_size = execution.Order.Quantity;
+                    this.guerillaTraderBridge.ot_entryTimestamp = execution.Order.Time;
+                    this.guerillaTraderBridge.ot_tickRange = tickRange;
+                    this.guerillaTraderBridge.ot_entryPrice = execution.Order.AverageFillPrice;
+                    this.guerillaTraderBridge.ot_size = execution.Order.Quantity;
 
-                    this.ot_tradeType = execution.Order.Name == "Buy" ? (int)TradeTypes.LongFuture : (int)TradeTypes.ShortFuture;
-                    this.ot_trigger = (int)TradeTriggers.Signals;
-                    this.ot_trend = execution.Order.Name == "Buy" ? (int)TrendTypes.Bullish : (int)TrendTypes.Bearish;
+                    this.guerillaTraderBridge.ot_tradeType = execution.Order.Name == "Buy" ? (int)TradeTypes.LongFuture : (int)TradeTypes.ShortFuture;
+                    this.guerillaTraderBridge.ot_trigger = (int)TradeTriggers.Crossover;
+                    this.guerillaTraderBridge.ot_trend = execution.Order.Name == "Buy" ? (int)TrendTypes.Bullish : (int)TrendTypes.Bearish;
 
-                    this.ot_diff = diffSeries[0];
-                    this.ot_diffXX = DiffXX;
-                    this.ot_diffXDiff = diffSeries[DiffXX] - diffSeries[0];
-                    this.ot_diffXSlope = this.ot_diffXDiff / DiffXX;
-                    this.ot_diffXChange = this.ot_diffXDiff / diffSeries[0];
+                    this.guerillaTraderBridge.ot_diff = diffSeries[0];
+                    this.guerillaTraderBridge.ot_diffXX = DiffXX;
+                    this.guerillaTraderBridge.ot_diffXDiff = diffSeries[DiffXX] - diffSeries[0];
+                    this.guerillaTraderBridge.ot_diffXSlope = this.guerillaTraderBridge.ot_diffXDiff / DiffXX;
+                    this.guerillaTraderBridge.ot_diffXChange = this.guerillaTraderBridge.ot_diffXDiff / diffSeries[0];
 
                     this.openPosition = true;
                 }
                 else if (openPosition)
                 {
-                    this.ot_exitTimestamp = execution.Order.Time;
-                    this.ot_exitPrice = execution.Order.AverageFillPrice;
+                    this.guerillaTraderBridge.ot_exitTimestamp = execution.Order.Time;
+                    this.guerillaTraderBridge.ot_exitPrice = execution.Order.AverageFillPrice;
 
                     if (execution.Order.Instrument.MasterInstrument.Name == "ES")
                     {
-                        this.ot_marketId = 1;
-                        this.ot_commissions = 4.04;
+                        this.guerillaTraderBridge.ot_marketId = 1;
+                        this.guerillaTraderBridge.ot_commissions = 4.04;
                     }
                     else if (execution.Order.Instrument.MasterInstrument.Name == "NQ")
                     {
-                        this.ot_marketId = 4;
-                        this.ot_commissions = 4.04;
+                        this.guerillaTraderBridge.ot_marketId = 4;
+                        this.guerillaTraderBridge.ot_commissions = 4.04;
                     }
                     else if (execution.Order.Instrument.MasterInstrument.Name == "6E")
                     {
-                        this.ot_marketId = 7;
-                        this.ot_commissions = 5.32;
+                        this.guerillaTraderBridge.ot_marketId = 7;
+                        this.guerillaTraderBridge.ot_commissions = 5.32;
                     }
 
-                    if (this.ot_tradeType == (int)TradeTypes.LongFuture)
+                    if (this.guerillaTraderBridge.ot_tradeType == (int)TradeTypes.LongFuture)
                     {
-                        this.ot_profitLoss = ((this.ot_exitPrice - this.ot_entryPrice) * execution.Order.Instrument.MasterInstrument.PointValue) * this.ot_size;
+                        this.guerillaTraderBridge.ot_profitLoss = ((this.guerillaTraderBridge.ot_exitPrice - this.guerillaTraderBridge.ot_entryPrice) * execution.Order.Instrument.MasterInstrument.PointValue) * this.guerillaTraderBridge.ot_size;
                     }
-                    else if (this.ot_tradeType == (int)TradeTypes.ShortFuture)
+                    else if (this.guerillaTraderBridge.ot_tradeType == (int)TradeTypes.ShortFuture)
                     {
-                        this.ot_profitLoss = ((this.ot_entryPrice - this.ot_exitPrice) * execution.Order.Instrument.MasterInstrument.PointValue) * this.ot_size;
+                        this.guerillaTraderBridge.ot_profitLoss = ((this.guerillaTraderBridge.ot_entryPrice - this.guerillaTraderBridge.ot_exitPrice) * execution.Order.Instrument.MasterInstrument.PointValue) * this.guerillaTraderBridge.ot_size;
                     }
 
-                    this.ot_adjProfitLoss = this.ot_profitLoss - this.ot_commissions;
-                    this.ot_profitLossPerContract = this.ot_adjProfitLoss / this.ot_size;
+                    this.guerillaTraderBridge.ot_adjProfitLoss = this.guerillaTraderBridge.ot_profitLoss - this.guerillaTraderBridge.ot_commissions;
+                    this.guerillaTraderBridge.ot_profitLossPerContract = this.guerillaTraderBridge.ot_adjProfitLoss / this.guerillaTraderBridge.ot_size;
 
                     this.openPosition = false;
 
-                    if (this.TradingAccountId > 0)
+                    if (State == State.Realtime && this.TradingAccountId > 0)
                     {
-                        SaveTradeFromNt(this.ot_marketId, this.ot_tradeType, this.ot_trigger, this.ot_trend, this.ot_diff, this.ot_diffXX, this.ot_diffXDiff, this.ot_diffXSlope, this.ot_diffXChange,
-                            this.ot_tickRange, this.ot_entryTimestamp, this.ot_entryPrice, this.ot_exitTimestamp, this.ot_exitPrice, this.ot_commissions, this.ot_profitLoss,
-                            this.ot_adjProfitLoss, this.ot_size, this.ot_profitLossPerContract, this.TradingAccountId, false);
+                        Bridge.SaveTradeFromNt(this.guerillaTraderBridge.ot_marketId, this.guerillaTraderBridge.ot_tradeType, this.guerillaTraderBridge.ot_trigger, this.guerillaTraderBridge.ot_trend, this.guerillaTraderBridge.ot_diff, this.guerillaTraderBridge.ot_diffXX, this.guerillaTraderBridge.ot_diffXDiff, this.guerillaTraderBridge.ot_diffXSlope, this.guerillaTraderBridge.ot_diffXChange,
+                            this.guerillaTraderBridge.ot_tickRange, this.guerillaTraderBridge.ot_entryTimestamp, this.guerillaTraderBridge.ot_entryPrice, this.guerillaTraderBridge.ot_exitTimestamp, this.guerillaTraderBridge.ot_exitPrice, this.guerillaTraderBridge.ot_commissions, this.guerillaTraderBridge.ot_profitLoss,
+                            this.guerillaTraderBridge.ot_adjProfitLoss, this.guerillaTraderBridge.ot_size, this.guerillaTraderBridge.ot_profitLossPerContract, this.TradingAccountId, false);
                     }
                 }
-            }
-        }
-        #endregion
-
-        #region RecordTrade
-        private static async Task SaveTradeFromNt(int MarketId,
-                        int TradeType,
-                        int Trigger,
-                        int Trend,
-                        Double SmaDiff,
-                        int DiffXX,
-                        Double DiffXDiff,
-                        Double DiffXSlope,
-                        Double DiffXChange,
-                        Double ATR,
-                        DateTime EntryDate,
-                        Double EntryPrice,
-                        DateTime ExitDate,
-                        Double ExitPrice,
-                        Double Commissions,
-                        Double ProfitLoss,
-                        Double AdjProfitLoss,
-                        int Size,
-                        Double ProfitLossPerContract,
-                        int TradingAccountId,
-                        bool test)
-        {
-            using (var client = new HttpClient())
-            {
-                client.BaseAddress = new Uri(test ? "http://dev-csandfort.gwi.com/GuerillaTrader.Web/api/services/app/" : "http://trader.calebinthecloud.com/api/services/app/");
-                var content = new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("MarketId", MarketId.ToString()),
-                    new KeyValuePair<string, string>("TradeType", TradeType.ToString()),
-                    new KeyValuePair<string, string>("Trigger", Trigger.ToString()),
-                    new KeyValuePair<string, string>("Trend", Trend.ToString()),
-                    new KeyValuePair<string, string>("SmaDiff", SmaDiff.ToString()),
-                    new KeyValuePair<string, string>("DiffXX", DiffXX.ToString()),
-                    new KeyValuePair<string, string>("DiffXDiff", DiffXDiff.ToString()),
-                    new KeyValuePair<string, string>("DiffXSlope", DiffXSlope.ToString()),
-                    new KeyValuePair<string, string>("DiffXChange", DiffXChange.ToString()),
-                    new KeyValuePair<string, string>("ATR", ATR.ToString()),
-                    new KeyValuePair<string, string>("EntryDate", EntryDate.ToString("g", DateTimeFormatInfo.InvariantInfo)),
-                    new KeyValuePair<string, string>("EntryPrice", EntryPrice.ToString()),
-                    new KeyValuePair<string, string>("ExitDate", ExitDate.ToString("g", DateTimeFormatInfo.InvariantInfo)),
-                    new KeyValuePair<string, string>("ExitPrice", ExitPrice.ToString()),
-                    new KeyValuePair<string, string>("Commissions", Commissions.ToString()),
-                    new KeyValuePair<string, string>("ProfitLoss", ProfitLoss.ToString()),
-                    new KeyValuePair<string, string>("AdjProfitLoss", AdjProfitLoss.ToString()),
-                    new KeyValuePair<string, string>("Size", Size.ToString()),
-                    new KeyValuePair<string, string>("ProfitLossPerContract", ProfitLossPerContract.ToString()),
-                    new KeyValuePair<string, string>("TradingAccountId", TradingAccountId.ToString())
-                });
-
-                var result = await client.PostAsync("trade/saveTradeFromNt", content);
             }
         }
         #endregion
@@ -283,6 +152,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProfitTarget = 5;
                 StopLoss = 12;
                 TradingAccountId = 0;
+                BailPeriod = 3;
+				GoPeriod = 3;
+				RangePeriod = 20;
+				MinRange = 8.5;
             }
             else if (State == State.Configure)
             {
@@ -292,8 +165,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 fastMaIndicator = EMA(FastMaPeriod);
                 slowMaIndicator = EMA(SlowMaPeriod);
+				myRange = MyRange(RangePeriod, MinRange);
 
                 slowMaIndicator.Plots[0].Brush = Brushes.White;
+                slowMaIndicator.Plots[0].Width = 2;
+
+                fastMaIndicator.Plots[0].Width = 2;
 
                 AddChartIndicator(fastMaIndicator);
                 AddChartIndicator(slowMaIndicator);
@@ -303,7 +180,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 diffSeries = new Series<double>(this);
                 highLowSeries = new Series<double>(this);
 
-                this.ResetOt();
+                //this.guerillaTraderBridge.Reset();
             }
         }
         #endregion
@@ -332,6 +209,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         #region Event Handler - OnBarUpdate
         protected override void OnBarUpdate()
         {
+            if (FastMaPeriod >= SlowMaPeriod) return;
+
             if (CurrentBar < SlowMaPeriod) return;
 
             double fastMa = fastMaIndicator[0];
@@ -342,11 +221,11 @@ namespace NinjaTrader.NinjaScript.Strategies
             highLowSeries[0] = (High[0] - Low[0]) / TickSize;
             tickRange = EMA(highLowSeries, TickRangePeriod)[0];
 
-            if (CurrentBar < (SlowMaPeriod + DiffXX)) return;
+            if (CurrentBar < (SlowMaPeriod + Math.Max(Math.Max(GoPeriod, BailPeriod), DiffXX))) return;
 
             bool validTickRange = tickRange > MinTickRange && tickRange < MaxTickRange;
 
-            Brush trendBrush = fastMa < slowMa ? BearishBrush : BullishBrush;
+            Brush trendBrush = (diffSeries[0] < MinMaDiff && diffSeries[0] > -MinMaDiff) ? NeutralBrush : fastMa < slowMa ? BearishBrush : BullishBrush;
             fastMaIndicator.PlotBrushes[0][0] = trendBrush;
 
             bool crossAboveBull = diffSeries[0] >= MinMaDiff && diffSeries[1] < MinMaDiff;
@@ -355,19 +234,70 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool crossAboveBear = diffSeries[0] > -MinMaDiff && diffSeries[1] <= -MinMaDiff;
             bool crossBelowBear = diffSeries[0] <= -MinMaDiff && diffSeries[1] > -MinMaDiff;
 
-            if (!this.openPosition && crossAboveBull)
+			bool goLong = true;
+			bool goShort = true;
+			
+			if(GoPeriod > 0)
+			{
+				for(int i = 0; i < GoPeriod; i++)
+				{
+					if(diffSeries[i] < diffSeries[i+1])
+					{
+						goLong = false;
+					}
+					
+					if(diffSeries[i] > diffSeries[i+1])
+					{
+						goShort = false;
+					}
+				}
+			}
+			else
+			{
+				goLong = false;
+				goShort = false;
+			}
+			
+			goLong = goLong && diffSeries[0] >= MinMaDiff;
+			goShort = goShort && diffSeries[0] <= -MinMaDiff;
+			
+			bool bailLong = true;
+			bool bailShort = true;
+			
+			if(BailPeriod > 0)
+			{
+				for(int i = 0; i < BailPeriod; i++)
+				{
+					if(diffSeries[i] > diffSeries[i+1])
+					{
+						bailLong = false;
+					}
+					
+					if(diffSeries[i] < diffSeries[i+1])
+					{
+						bailShort = false;
+					}
+				}
+			}
+			else
+			{
+				bailLong = false;
+				bailShort = false;
+			}
+			
+            if (!this.openPosition && (crossAboveBull || goLong))
             {
                 EnterLong();
             }
-            else if (!this.openPosition && crossBelowBear)
+            else if (!this.openPosition && (crossBelowBear || goShort))
             {
                 EnterShort();
             }
-            else if (this.openPosition && crossBelowBull)
+            else if (this.openPosition && (crossBelowBull || (this.guerillaTraderBridge.ot_tradeType == 1 && bailLong)))
             {
                 ExitLong();
             }
-            else if (this.openPosition && crossAboveBear)
+            else if (this.openPosition && (crossAboveBear || (this.guerillaTraderBridge.ot_tradeType == 2 && bailShort)))
             {
                 ExitShort();
             }
@@ -451,9 +381,33 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
+        [Range(0, int.MaxValue)]
         [Display(Name = "TradingAccountId", Order = 14, GroupName = "Parameters")]
         public int TradingAccountId
+        { get; set; }
+				
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "BailPeriod", Order = 15, GroupName = "Parameters")]
+        public int BailPeriod
+        { get; set; }
+			
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "GoPeriod", Order = 16, GroupName = "Parameters")]
+        public int GoPeriod
+        { get; set; }
+			
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "RangePeriod", Order = 17, GroupName = "Parameters")]
+        public int RangePeriod
+        { get; set; }
+			
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "MinRange", Order = 18, GroupName = "Parameters")]
+        public double MinRange
         { get; set; }
         #endregion
     }
