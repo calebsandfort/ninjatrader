@@ -1,4 +1,4 @@
-#region Using declarations
+a#region Using declarations
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -52,20 +52,17 @@ namespace NinjaTrader.NinjaScript.Indicators
 				FastMaPeriod					= 10;
 				SlowMaPeriod					= 20;
 				AddPlot(Brushes.Orange, "DiffPlot");
-				
-				Stroke aStroke = new Stroke(Brushes.White, DashStyleHelper.Dash, 1);
-				AddLine(aStroke, SmaThreshold, "UpperThreshold");
-				AddLine(aStroke, -SmaThreshold, "LowerThreshold");
-				
 				Plots[0].Width= 2;
-				
-				diffSeries = new Series<double>(this);
 			}
 			else if (State == State.Configure)
 			{
+				Stroke aStroke = new Stroke(Brushes.White, DashStyleHelper.Dash, 1);
+				AddLine(aStroke, SmaThreshold, "UpperThreshold");
+				AddLine(aStroke, -SmaThreshold, "LowerThreshold");
 			}
 			else if (State == State.DataLoaded)
 			{
+				diffSeries = new Series<double>(this);
 			}
 		}
 
