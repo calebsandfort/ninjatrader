@@ -52,7 +52,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             Resistance,
             BullishBreakout,
             BearishBreakout,
-            Contrarian
+            Contrarian,
+            Crossover
         }
 
         private enum TrendTypes
@@ -142,7 +143,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     this.ot_size = execution.Order.Quantity;
 
                     this.ot_tradeType = execution.Order.Name == "Buy" ? (int)TradeTypes.LongFuture : (int)TradeTypes.ShortFuture;
-                    this.ot_trigger = (int)TradeTriggers.Signals;
+                    this.ot_trigger = Contrarian ? (int)TradeTriggers.Contrarian : (int)TradeTriggers.Signals;
                     this.ot_trend = execution.Order.Name == "Buy" ? (int)TrendTypes.Bullish : (int)TrendTypes.Bearish;
 
                     this.ot_diff = diffSeries[0];
@@ -184,7 +185,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     this.ot_adjProfitLoss = this.ot_profitLoss - this.ot_commissions;
                     this.ot_profitLossPerContract = this.ot_adjProfitLoss / this.ot_size;
 
-                    if (this.TradingAccountId > 0)
+                    if (State == State.Realtime && this.TradingAccountId > 0)
                     {
                         SaveTradeFromNt(this.ot_marketId, this.ot_tradeType, this.ot_trigger, this.ot_trend, this.ot_diff, this.ot_diffXX, this.ot_diffXDiff, this.ot_diffXSlope, this.ot_diffXChange,
                             this.ot_tickRange, this.ot_entryTimestamp, this.ot_entryPrice, this.ot_exitTimestamp, this.ot_exitPrice, this.ot_commissions, this.ot_profitLoss,
@@ -292,6 +293,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProfitTarget = 5;
                 StopLoss = 12;
                 TradingAccountId = 0;
+				Contrarian = false;
             }
             else if (State == State.Configure)
             {
@@ -367,14 +369,28 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (buy)
             {
-                EnterLong();
+				if(Contrarian){
+					EnterShort();
+					//EnterShortStopMarket(Close[0]);
+				}
+				else{
+                	EnterLong();
+					//EnterLongLimit(Close[0]);
+				}
             }
 
             bool sell = GoShort && validTickRange && isGreenTwoBack && isRedOneBack && diffSeries[0] < -MinMaDiff && diffSeries[0] > -MaxMaDiff;
 
             if (sell)
             {
-                EnterShort();
+                if(Contrarian){
+					EnterLong();
+					//EnterLongStopMarket(Close[0]);
+				}
+				else{
+                	EnterShort();
+					//EnterShortLimit(Close[0]);
+				}
             }
         } 
         #endregion
@@ -456,10 +472,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
+        [Range(0, int.MaxValue)]
         [Display(Name = "TradingAccountId", Order = 14, GroupName = "Parameters")]
         public int TradingAccountId
         { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name="Contrarian", Order=15, GroupName="Parameters")]
+		public bool Contrarian
+		{ get; set; }
         #endregion
     }
 }
